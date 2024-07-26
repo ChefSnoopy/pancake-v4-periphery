@@ -156,4 +156,37 @@ abstract contract LiquidityManagement is CLPeripheryImmutableState, PeripheryPay
             }
         }
     }
+
+    /// @notice Settle (pay) a currency to the vault
+    /// @param currency Currency to settle
+    /// @param payer Address of the payer, the token sender
+    /// @param amount Amount to send
+    /// @param burn If true, burn the ERC-6909 token, otherwise ERC20-transfer to the vault
+    function settle(Currency currency, address payer, uint256 amount, bool burn) internal {
+        // for native currencies or burns, calling sync is not required
+        // short circuit for ERC-6909 burns to support ERC-6909-wrapped native tokens
+        if (burn) {
+            vault.burn(payer, currency, amount);
+        } else if (currency.isNative()) {
+            vault.settle{value: amount}(currency);
+        } else {
+            vault.sync(currency);
+            // if (payer != address(this)) {
+            //     IERC20Minimal(Currency.unwrap(currency)).transferFrom(payer, address(vault), amount);
+            // } else {
+            //     IERC20Minimal(Currency.unwrap(currency)).transfer(address(vault), amount);
+            // }
+            pay(currency, payer, address(vault), amount);
+            vault.settle(currency);
+        }
+    }
+
+    /// @notice Take (receive) a currency from the vault
+    /// @param currency Currency to take
+    /// @param recipient Address of the recipient, the token receiver
+    /// @param amount Amount to receive
+    /// @param claims If true, mint the ERC-6909 token, otherwise ERC20-transfer from the vault to recipient
+    function take(Currency currency, address recipient, uint256 amount, bool claims) internal {
+        claims ? vault.mint(recipient, currency, amount) : vault.take(currency, recipient, amount);
+    }
 }
