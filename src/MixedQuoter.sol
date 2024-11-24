@@ -17,6 +17,7 @@ import {IMixedQuoter} from "./interfaces/IMixedQuoter.sol";
 import {MixedQuoterActions} from "./libraries/MixedQuoterActions.sol";
 import {MixedQuoterTokenRecorder} from "./libraries/MixedQuoterTokenRecorder.sol";
 import {Multicall_v4} from "./base/Multicall_v4.sol";
+import "forge-std/console2.sol";
 
 /// @title Provides on chain quotes for v4, V3, V2, Stable and MixedRoute exact input swaps
 /// @notice Allows getting the expected amount out for a given swap without executing the swap
@@ -36,6 +37,8 @@ contract MixedQuoter is IMixedQuoter, IPancakeV3SwapCallback, Multicall_v4 {
 
     ICLQuoter public immutable clQuoter;
     IBinQuoter public immutable binQuoter;
+
+    mapping(bytes32 poolHash => bytes swapHistoryList) public poolSwapList;
 
     constructor(
         address _factoryV3,
@@ -351,24 +354,40 @@ contract MixedQuoter is IMixedQuoter, IPancakeV3SwapCallback, Multicall_v4 {
                 bool zeroForOne = tokenIn < tokenOut;
                 checkV4PoolKeyCurrency(clParams.poolKey, zeroForOne, tokenIn, tokenOut);
 
-                bytes32 poolHash = MixedQuoterTokenRecorder.getV4CLPoolHash(clParams.poolKey);
-                // update v4 pool swap direction, only allow one direction in one transaction
-                MixedQuoterTokenRecorder.setAndCheckSwapDirection(poolHash, zeroForOne ? 1 : 2);
-                (uint256 accAmountIn, uint256 accAmountOut) =
-                    MixedQuoterTokenRecorder.getPoolSwapTokenAccumulation(poolHash, zeroForOne);
-
-                uint256 swapAmountOut;
-                amountIn += accAmountIn;
-                (swapAmountOut, gasEstimateForCurAction) = clQuoter.quoteExactInputSingle(
-                    IQuoter.QuoteExactSingleParams({
+                IQuoter.QuoteExactSingleParams memory swapParams = IQuoter.QuoteExactSingleParams({
                         poolKey: clParams.poolKey,
                         zeroForOne: zeroForOne,
                         exactAmount: amountIn.toUint128(),
                         hookData: clParams.hookData
-                    })
-                );
-                MixedQuoterTokenRecorder.setPoolSwapTokenAccumulation(poolHash, amountIn, swapAmountOut, zeroForOne);
-                amountIn = swapAmountOut - accAmountOut;
+                    });
+
+                bytes32 poolHash = MixedQuoterTokenRecorder.getV4CLPoolHash(clParams.poolKey);
+                
+                bytes memory swapListBytes = poolSwapList[poolHash];
+                console2.log("swapListBytes tload length: {}", swapListBytes.length);
+                if(swapListBytes.length > 0) {
+                    IQuoter.QuoteExactSingleParams[] memory swapHistoryList =
+                        abi.decode(swapListBytes, (IQuoter.QuoteExactSingleParams[]));
+                    IQuoter.QuoteExactSingleParams[] memory swapList =
+                        new IQuoter.QuoteExactSingleParams[](swapHistoryList.length + 1);
+                    for (uint256 i = 0; i < swapHistoryList.length; i++) {
+                        swapList[i] = swapHistoryList[i];
+                    }
+                    swapList[swapHistoryList.length] = swapParams;
+
+                    (amountIn, gasEstimateForCurAction) = clQuoter.quoteExactOutputSingleList(swapList);
+                    swapListBytes = abi.encode(swapList);
+                }else{
+                    IQuoter.QuoteExactSingleParams[] memory swapList =
+                        new IQuoter.QuoteExactSingleParams[](1);
+                    swapList[0] = swapParams;
+                    (amountIn, gasEstimateForCurAction) = clQuoter.quoteExactOutputSingleList(swapList);
+                    swapListBytes = abi.encode(swapList);
+                    
+                }
+                console2.log("swapListBytes tstore length: {}", swapListBytes.length);
+                poolSwapList[poolHash] = swapListBytes;
+
             } else if (action == MixedQuoterActions.V4_BIN_EXACT_INPUT_SINGLE) {
                 QuoteMixedV4ExactInputSingleParams memory binParams =
                     abi.decode(params[actionIndex], (QuoteMixedV4ExactInputSingleParams));

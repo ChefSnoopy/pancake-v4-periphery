@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {PoolKey} from "pancake-v4-core/src/types/PoolKey.sol";
+import "forge-std/console2.sol";
 
 /// @dev Record all inputs and outputs of all transactions in the path.
 library MixedQuoterTokenRecorder {
@@ -27,6 +28,9 @@ library MixedQuoterTokenRecorder {
 
     /// @dev uint256 internal constant SWAP_V4_CL = uint256(keccak256("MIXED_QUOTER_SWAP_V4_CL")) - 1;
     uint256 internal constant SWAP_V4_CL = 0x1a7c9a13842b613486d9207eda875c24e33425305b8b8df2e040c19ef2ae3088;
+
+    /// @dev uint256 internal constant SWAP_V4_CL_LIST = uint256(keccak256("MIXED_QUOTER_SWAP_V4_CL_LIST")) - 1;
+    uint256 internal constant SWAP_V4_CL_LIST = 0x56b09120707293fbb5dc1dd1cd2de2aa3ce765be052d861614e2f29dd1c60d99;
 
     /// @dev uint256 internal constant SWAP_V4_BIN = uint256(keccak256("MIXED_QUOTER_SWAP_V4_BIN")) - 1;
     uint256 internal constant SWAP_V4_BIN = 0xea33987d3dc3e2595aa727354eec3d9b92d4061c1331c4a19f9862248f2e1040;
@@ -59,7 +63,7 @@ library MixedQuoterTokenRecorder {
 
         if (currentDirection == uint256(SwapDirection.NONE)) {
             uint256 directionSlot = uint256(keccak256(abi.encode(poolHash, SWAP_DIRECTION)));
-            assembly {
+            assembly ("memory-safe") {
                 tstore(directionSlot, swapDirection)
             }
         } else {
@@ -70,7 +74,7 @@ library MixedQuoterTokenRecorder {
     function getSwapDirection(bytes32 poolHash) internal view returns (uint256) {
         uint256 directionSlot = uint256(keccak256(abi.encode(poolHash, SWAP_DIRECTION)));
         uint256 swapDirection;
-        assembly {
+        assembly ("memory-safe") {
             swapDirection := tload(directionSlot)
         }
         return swapDirection;
@@ -86,9 +90,9 @@ library MixedQuoterTokenRecorder {
         (uint256 currentAmount0, uint256 currentAmount1) = getPoolSwapTokenAccumulation(poolHash);
         amount0 += currentAmount0;
         amount1 += currentAmount1;
-        assembly {
-            sstore(token0Slot, amount0)
-            sstore(token1Slot, amount1)
+        assembly ("memory-safe") {
+            tstore(token0Slot, amount0)
+            tstore(token1Slot, amount1)
         }
     }
 
@@ -107,10 +111,53 @@ library MixedQuoterTokenRecorder {
             amount0 = currentAmount0 + amountOut;
             amount1 = currentAmount1 + amountIn;
         }
-        assembly {
-            sstore(token0Slot, amount0)
-            sstore(token1Slot, amount1)
+        assembly ("memory-safe") {
+            tstore(token0Slot, amount0)
+            tstore(token1Slot, amount1)
         }
+    }
+
+    // function setV4PoolSwapList(bytes32 poolHash, bytes memory list) internal {
+    //     uint256 listSlot = uint256(keccak256(abi.encode(poolHash, 999999, SWAP_V4_CL_LIST)));
+    //     console2.log("setV4PoolSwapList", listSlot);
+    //     console2.logBytes(list);
+    //     bytes memory readList;
+    //     assembly ("memory-safe") {
+    //         sstore(listSlot, list)
+    //         // tstore(listSlot, list)
+    //         // readList := tload(listSlot)
+    //     }
+    //     // console2.logString("read after store");
+    //     // console2.logBytes(readList);
+    // }
+
+    // read bytes , need to read one by one
+    // function getV4PoolSwapList(bytes32 poolHash) internal view returns (bytes memory readList) {
+    //     uint256 listSlot = uint256(keccak256(abi.encode(poolHash, 999999, SWAP_V4_CL_LIST)));
+    //     assembly ("memory-safe") {
+    //         // readList := tload(listSlot)
+    //         readList := sload(listSlot)
+    //     }
+    //     console2.log("getV4PoolSwapList tload", listSlot);
+    //     uint256 counter = getCounter();
+    //     console2.log("getV4PoolSwapList counter", counter);
+    //     console2.logBytes(readList);
+    // }
+
+    function setCounter() internal {
+        uint256 counter = getCounter();
+        counter += 1;
+        assembly ("memory-safe") {
+            tstore(SWAP_V4_CL_LIST, counter)
+        }
+    }
+
+    function getCounter() internal view returns (uint256) {
+        uint256 counter;
+        assembly ("memory-safe") {
+            counter := tload(SWAP_V4_CL_LIST)
+        }
+        return counter;
     }
 
     /// @dev Get the swap token accumulation of the pool.
@@ -122,9 +169,9 @@ library MixedQuoterTokenRecorder {
         uint256 token1Slot = uint256(keccak256(abi.encode(poolHash, SWAP_TOKEN1_ACCUMULATION)));
         uint256 amount0;
         uint256 amount1;
-        assembly {
-            amount0 := sload(token0Slot)
-            amount1 := sload(token1Slot)
+        assembly ("memory-safe") {
+            amount0 := tload(token0Slot)
+            amount1 := tload(token1Slot)
         }
         return (amount0, amount1);
     }
@@ -138,9 +185,9 @@ library MixedQuoterTokenRecorder {
         uint256 token1Slot = uint256(keccak256(abi.encode(poolHash, SWAP_TOKEN1_ACCUMULATION)));
         uint256 amount0;
         uint256 amount1;
-        assembly {
-            amount0 := sload(token0Slot)
-            amount1 := sload(token1Slot)
+        assembly ("memory-safe") {
+            amount0 := tload(token0Slot)
+            amount1 := tload(token1Slot)
         }
         if (isZeroForOne) {
             return (amount0, amount1);

@@ -21,6 +21,10 @@ interface ICLQuoter is IQuoter {
         external
         returns (uint256 amountOut, uint256 gasEstimate);
 
+    function quoteExactOutputSingleList(QuoteExactSingleParams[] memory params)
+        external
+        returns (uint256 amountIn, uint256 gasEstimate);
+
     /// @notice Returns the delta amounts along the swap path for a given exact input swap
     /// @param params the params for the quote, encoded as 'QuoteExactParams'
     /// currencyIn The input currency of the swap
